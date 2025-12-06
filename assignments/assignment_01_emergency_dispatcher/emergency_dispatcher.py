@@ -10,7 +10,7 @@ Instructions: Fill the TODOs only. Do not change class/method signatures.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass 
 from typing import Optional
 
 from langchain_openai import ChatOpenAI
@@ -30,16 +30,16 @@ class EmergencyDispatcher:
 
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.2):
         # TODO: Initialize an LLM for stable, reproducible outputs
-        # self.llm = ChatOpenAI(model=model, temperature=temperature)
-        self.llm = None
+        self.llm = ChatOpenAI(model=model, temperature=temperature)
+        
 
         # TODO: Build the ChatPromptTemplate from prompt strings in `_build_prompt`
-        # self.prompt = self._build_prompt()
-        self.prompt = None
+        self.prompt = self._build_prompt()
+        
 
         # TODO: Create a chain that maps {transcript} -> "URGENCY | SUMMARY | ACTION"
-        # self.chain = self.prompt | self.llm | StrOutputParser()
-        self.chain = None
+        self.chain = self.prompt | self.llm | StrOutputParser()
+        
 
     def _build_prompt(self) -> Optional[ChatPromptTemplate]:
         """
@@ -61,13 +61,12 @@ class EmergencyDispatcher:
         )
         user_prompt = "Transcript: {transcript}\nReturn only the line, no extra text."
 
-        # TODO: create ChatPromptTemplate with above prompts
-        # Example construction (fill in):
-        # return ChatPromptTemplate.from_messages([
-        #     ("system", system_prompt),
-        #     ("user", user_prompt),
-        # ])
-        return None
+                # TODO: create ChatPromptTemplate with above prompts
+        return ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("user", user_prompt),
+        ])
+
 
     def triage_call(self, transcript: str) -> DispatchResult:
         """
@@ -78,10 +77,33 @@ class EmergencyDispatcher:
         - Strip whitespace around each field
         - Map to DispatchResult(urgency, summary, action)
         """
-        # TODO: invoke the chain with {"transcript": transcript}
-        # and parse the result into DispatchResult
-        raise NotImplementedError("Build chain, invoke, and parse triage output.")
+        # 1. Run the chain with the transcript
+        raw = self.chain.invoke({"transcript": transcript})
 
+        # 2. Split the result on "|"
+        parts = [p.strip() for p in raw.split("|")]
+
+        # 3. If format is wrong, return a safe fallback
+        if len(parts) != 3:
+            return DispatchResult(
+                urgency="UNKNOWN",
+                summary=raw[:80],
+                action="Escalate to human dispatcher",
+            )
+
+        urgency, summary, action = parts
+
+        # 4. Normalize urgency
+        urgency = urgency.upper()
+        if urgency not in {"EMERGENCY", "NON_EMERGENCY", "UNKNOWN"}:
+            urgency = "UNKNOWN"
+
+        # 5. Return structured result
+        return DispatchResult(
+            urgency=urgency,
+            summary=summary,
+            action=action,
+        )
 
 def _demo_cases() -> None:
     dispatcher = EmergencyDispatcher()
