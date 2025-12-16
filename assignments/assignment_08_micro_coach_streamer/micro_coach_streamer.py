@@ -8,63 +8,92 @@ encouraging guidance token-by-token via a callback.
 import os
 from typing import Any
 
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.callbacks import BaseCallbackHandler
 
-class PrintTokens:
-    """Minimal callback-like interface for printing tokens.
 
-    Implement compatibility with LangChain callback protocol if desired.
-    """
+class PrintTokens(BaseCallbackHandler):
+    """Print tokens to stdout as they arrive."""
 
     def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
-        print(token, end="")
+        print(token, end="", flush=True)
 
 
 class MicroCoach:
     def __init__(self):
-        """Store prompt strings and prepare placeholders.
-
-        Provide:
-        - `system_prompt` motivating but practical tone
-        - `user_prompt` with variables {goal}, {time_available}
-        - `self.llm_streaming` and `self.llm_plain` placeholders (None), with TODOs
-        - `self.stream_prompt` and `self.plain_prompt` placeholders (None), with TODOs
-        """
+        # Prompt strings
         self.system_prompt = (
-            "You are a supportive micro-coach. Keep plans realistic and brief."
+            "You are a supportive micro-coach. Keep plans realistic, motivating, "
+            "and very brief."
         )
-        self.user_prompt = "Goal: {goal}\nTime: {time_available}\nReturn a 3-step plan."
+        self.user_prompt = (
+            "Goal: {goal}\n"
+            "Time available: {time_available}\n"
+            "Return a simple 3-step plan."
+        )
 
-        # TODO: Build prompts and LLMs (streaming and non-streaming)
-        self.llm_streaming = None
-        self.llm_plain = None
-        self.stream_prompt = None
-        self.plain_prompt = None
-        self.stream_chain = None
-        self.plain_chain = None
+        # Build prompts
+        self.plain_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", self.system_prompt),
+                ("user", self.user_prompt),
+            ]
+        )
+
+        self.stream_prompt = self.plain_prompt  # same prompt, different execution
+
+        # Non-streaming LLM
+        self.llm_plain = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.3,
+        )
+
+        # Streaming LLM with callback
+        self.llm_streaming = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.5,
+            streaming=True,
+            callbacks=[PrintTokens()],
+        )
+
+        # Chains
+        self.plain_chain = self.plain_prompt | self.llm_plain | StrOutputParser()
+        self.stream_chain = self.stream_prompt | self.llm_streaming | StrOutputParser()
 
     def coach(self, goal: str, time_available: str, stream: bool = False) -> str:
-        """Return guidance using streaming or non-streaming path.
+        """Return guidance using streaming or non-streaming path."""
 
-        Implement:
-        - If `stream=True`, attach a token printer callback and stream output.
-        - Else, return a compact non-streamed plan string.
-        """
-        raise NotImplementedError("Implement streaming vs non-streaming coaching.")
+        inputs = {
+            "goal": goal,
+            "time_available": time_available,
+        }
+
+        if stream:
+            # Stream tokens live to console
+            _ = self.stream_chain.invoke(inputs)
+            return ""
+
+        # Non-streamed compact response
+        result = self.plain_chain.invoke(inputs)
+        return result
 
 
 def _demo():
     if not os.getenv("OPENAI_API_KEY"):
         print("⚠️ Set OPENAI_API_KEY before running.")
+
     coach = MicroCoach()
-    try:
-        print("\n🏃 Micro-Coach — demo\n" + "-" * 40)
-        print(coach.coach("resume drafting", "25 minutes", stream=False))
-        print()
-        print("\nStreaming example:")
-        coach.coach("push-ups habit", "10 minutes", stream=True)
-        print()
-    except NotImplementedError as e:
-        print(e)
+
+    print("\n🏃 Micro-Coach — demo\n" + "-" * 40)
+
+    # Non-streaming example
+    print(coach.coach("resume drafting", "25 minutes", stream=False))
+
+    print("\nStreaming example:")
+    coach.coach("push-ups habit", "10 minutes", stream=True)
+    print()
 
 
 if __name__ == "__main__":
